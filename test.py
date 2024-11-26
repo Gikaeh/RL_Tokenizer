@@ -3,7 +3,7 @@ import numpy as np
 
 def evaluate_word_analogies(embeddings, vocab, analogy_file_path, device):
     correct, total, skip = 0, 0, 0
-    embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
+    # embeddings[2:] /= np.linalg.norm(embeddings[2:], axis=1, keepdims=True)
 
     with open(analogy_file_path, 'r') as f:
         for line in f:
@@ -36,11 +36,18 @@ def evaluate_word_analogies(embeddings, vocab, analogy_file_path, device):
             predicted_emb = embeddings[idx_a] - embeddings[idx_b] + embeddings[idx_c]
 
             # Find the most similar word to the predicted embedding
-            predicted_emb /= np.linalg.norm(predicted_emb)
+            # predicted_emb /= np.linalg.norm(predicted_emb)
             
             similarities = np.dot(embeddings, predicted_emb)
-            similarities[idx_a, idx_b, idx_c] = -np.inf # Exclude original words from the nearest neighbor search
             best_match_idx = np.argmax(similarities)
+
+            while(True):
+                if best_match_idx in [idx_a, idx_b, idx_c]:
+                    similarities[best_match_idx] = -np.inf # Exclude original words from the nearest neighbor search
+                    best_match_idx = np.argmax(similarities)
+                    continue
+                else:
+                    break
 
             # Check if the prediction is correct
             if best_match_idx == idx_d:
