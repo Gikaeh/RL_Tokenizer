@@ -1,62 +1,109 @@
 import numpy as np
-
+import torch
 
 def evaluate_word_analogies(embeddings, vocab, analogy_file_path, device):
     correct, total, skip = 0, 0, 0
-    # embeddings[2:] /= np.linalg.norm(embeddings[2:], axis=1, keepdims=True)
+
+    # Convert numpy
+    if isinstance(embeddings, torch.Tensor):
+        embeddings = embeddings.detach().cpu().numpy()
+
+    if np.any(np.isnan(embeddings)) or np.any(np.isinf(embeddings)):
+        raise ValueError("[Error] Invalid embeddings before normalization.")
+
+    zero_rows = np.linalg.norm(embeddings, axis=1) == 0
+    if np.any(zero_rows):
+        print(f"[Warning] Replacing {np.sum(zero_rows)} zero embeddings with random values.")
+        embeddings[zero_rows] = np.random.normal(scale=1e-6, size=(np.sum(zero_rows), embeddings.shape[1]))
+
+    # Normalize embeddings
+    embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
+
+    if np.any(np.isnan(embeddings)) or np.any(np.isinf(embeddings)):
+        raise ValueError("[Error] Invalid embeddings after normalization.")
 
     with open(analogy_file_path, 'r') as f:
-        for line in f:
-            if line.startswith(':'):  # Skip category headers
+        for line_num, line in enumerate(f):
+            if line.startswith(':'):
                 continue
-            word_a, word_b, word_c, word_d = line.strip().split()
-            
-            # Converts all tokens to indexes to get the embeddings
+
+            word_a, word_b, word_c, word_d = line.strip().split() # Read analogy words.
+
+            print(f"[Debug] Processing analogy line {line_num}: {word_a}, {word_b}, {word_c}, {word_d}")
+
+            # Map words to indices
             idx_a = vocab.token_to_idx.get(word_a.lower(), vocab.token_to_idx["<unk>"])
             idx_b = vocab.token_to_idx.get(word_b.lower(), vocab.token_to_idx["<unk>"])
             idx_c = vocab.token_to_idx.get(word_c.lower(), vocab.token_to_idx["<unk>"])
             idx_d = vocab.token_to_idx.get(word_d.lower(), vocab.token_to_idx["<unk>"])
 
-            # Checks if any of the indexes are 1 (unknown) and adds bpe token to front of word
-            if idx_a == 1:
-                idx_a = vocab.token_to_idx.get(('Ġ' + word_a.lower()), vocab.token_to_idx["<unk>"])
-            if idx_b == 1:
-                idx_b = vocab.token_to_idx.get(('Ġ' + word_b.lower()), vocab.token_to_idx["<unk>"])
-            if idx_c == 1:
-                idx_c = vocab.token_to_idx.get(('Ġ' + word_c.lower()), vocab.token_to_idx["<unk>"])
-            if idx_d == 1:
-                idx_d = vocab.token_to_idx.get(('Ġ' + word_d.lower()), vocab.token_to_idx["<unk>"])
+            # Handle `Ġ`
+            if idx_a == vocab.token_to_idx["<unk>"]:
+                idx_a = vocab.token_to_idx.get('Ġ' + word_a.lower(), vocab.token_to_idx["<unk>"])
+            if idx_b == vocab.token_to_idx["<unk>"]:
+                idx_b = vocab.token_to_idx.get('Ġ' + word_b.lower(), vocab.token_to_idx["<unk>"])
+            if idx_c == vocab.token_to_idx["<unk>"]:
+                idx_c = vocab.token_to_idx.get('Ġ' + word_c.lower(), vocab.token_to_idx["<unk>"])
+            if idx_d == vocab.token_to_idx["<unk>"]:
+                idx_d = vocab.token_to_idx.get('Ġ' + word_d.lower(), vocab.token_to_idx["<unk>"])
 
-            # Checks if adding token to front of word works if not skip words
-            if idx_a == 1 or idx_b == 1 or idx_c == 1 or idx_d == 1:
+            # Check if words in the vocab.
+            print(f"[Debug] Vocabulary indices: {word_a} -> {idx_a}, {word_b} -> {idx_b}, "
+                  f"{word_c} -> {idx_c}, {word_d} -> {idx_d}")
+
+            # Skip unknown.
+            if idx_a == vocab.token_to_idx["<unk>"] or idx_b == vocab.token_to_idx["<unk>"] or \
+               idx_c == vocab.token_to_idx["<unk>"] or idx_d == vocab.token_to_idx["<unk>"]:
+                print(f"[Warning] Skipping line {line_num}, <unk>.")
                 skip += 1
                 continue
 
-            # Predicted vector: emb_d = emb_b - emb_a + emb_c
-            predicted_emb = embeddings[idx_a] - embeddings[idx_b] + embeddings[idx_c]
+            # predicted embedding = emb(b) - emb(a) + emb(c)
+            predicted_emb = embeddings[idx_b] - embeddings[idx_a] + embeddings[idx_c]
+            predicted_emb /= np.linalg.norm(predicted_emb)  # Normalize predicted embedding.
 
-            # Find the most similar word to the predicted embedding
-            # predicted_emb /= np.linalg.norm(predicted_emb)
-            
+            if np.any(np.isnan(predicted_emb)) or np.any(np.isinf(predicted_emb)):
+                print(f"[Error] Invalid prediction. Skipping analogy.")
+                skip += 1
+                continue
+
+            # Compute similarities
             similarities = np.dot(embeddings, predicted_emb)
-            best_match_idx = np.argmax(similarities)
 
-            while(True):
-                if best_match_idx in [idx_a, idx_b, idx_c]:
-                    similarities[best_match_idx] = -np.inf # Exclude original words from the nearest neighbor search
-                    best_match_idx = np.argmax(similarities)
-                    continue
-                else:
-                    break
+            similarities[[idx_a, idx_b, idx_c]] = -np.inf
 
-            # Check if the prediction is correct
-            if best_match_idx == idx_d:
+            best_match_idx = np.argmax(similarities) # Find the best match.
+
+            top_words = []
+            top_similarities = []
+            top_indices = np.argsort(similarities)[-5:][::-1]
+
+            # get top-5 predictions
+            for idx in top_indices:
+                word = vocab.idx_to_token.get(idx, "<unk>")
+                top_words.append(word)
+                similarity = similarities[idx]
+                top_similarities.append(similarity)
+
+            print(f"[Debug] Top Predictions: {list(zip(top_words, top_similarities))}")
+
+            # Remove `Ġ`
+            predicted_word = vocab.idx_to_token.get(best_match_idx, "").lstrip('Ġ')
+            correct_word = vocab.idx_to_token.get(idx_d, "").lstrip('Ġ')
+
+            if predicted_word == correct_word:
                 correct += 1
-            total += 1    
+            total += 1
 
-            # if idx_a != 1:
-            #     print('Word 1: ', vocab.idx_to_token.get(idx_a))
-            print('Word 1: ', vocab.idx_to_token.get(idx_a), 'Word 2: ', vocab.idx_to_token.get(idx_b), 'Word 3: ', vocab.idx_to_token.get(idx_c), 'Word 4: ', vocab.idx_to_token.get(idx_d), 'predicted word: ', vocab.idx_to_token.get(best_match_idx))
-            print(idx_a, ' ', idx_b, ' ', idx_c, ' ', idx_d, ' ', best_match_idx)
+            print(f"[Debug] Predicted: {predicted_word}, Correct: {correct_word}")
 
-    return correct/total      
+    if total > 0:
+        accuracy = correct / total
+    else:
+        accuracy = 0
+
+    # Debug: Final summary of evaluation.
+    print(f"[Summary] Evaluation complete. Total analogies: {total + skip}, "
+          f"Evaluated: {total}, Skipped: {skip}, Accuracy: {accuracy:.4f}")
+
+    return accuracy
