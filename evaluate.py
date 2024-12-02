@@ -39,7 +39,7 @@ def create_bpe_tokenizer(tokenizer_path, dataset):
     if not os.path.exists(tokenizer_path):
         bpe_tokenizer = Tokenizer(models.BPE())
         bpe_tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
-        trainer = trainers.BpeTrainer(vocab_size=55000, min_frequency=2, special_tokens=["[PAD]", "[UNK]"])
+        trainer = trainers.BpeTrainer(vocab_size=33230, min_frequency=2, special_tokens=["[PAD]", "[UNK]"])
         bpe_tokenizer.train_from_iterator(dataset)
         os.makedirs(os.path.dirname(tokenizer_path), exist_ok=True)
         bpe_tokenizer.save(tokenizer_path)
