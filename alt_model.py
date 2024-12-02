@@ -4,8 +4,12 @@ from gensim.models.callbacks import CallbackAny2Vec
 import numpy as np
 from tqdm import tqdm
 
-def train_word2vec(training_data, embedding_dim):
+def train_cbow(training_data, embedding_dim):
     word2vec_model = Word2Vec(training_data, vector_size=embedding_dim, window=5, min_count=1, callbacks=[TqdmCallback(5)])
+    return word2vec_model
+
+def train_skipgram(training_data, embedding_dim):
+    word2vec_model = Word2Vec(training_data, vector_size=embedding_dim, window=5, min_count=1, sg=1, callbacks=[TqdmCallback(5)])
     return word2vec_model
 
 def get_word2vec_embeddings(model, vocab):

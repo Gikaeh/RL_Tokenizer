@@ -13,7 +13,7 @@ from tokenizer_environment import VectorizedTokenizerEnvironment, TokenizerEnvir
 from utils import preprocess_state, load_preprocessed_data, save_model_checkpoint, print_parameters, download_and_preprocess_wikitext, create_directory_structure, compute_efficiency_score
 from vocab import Vocabulary
 from test import evaluate_word_analogies
-from alt_model import train_word2vec, get_word2vec_embeddings
+from alt_model import train_cbow, train_skipgram, get_word2vec_embeddings
 
 
 # -------------------------------
@@ -29,7 +29,7 @@ DATA_PERCENTAGE = 1 # Percentage of data to use for training
 
 # Environment Parameters
 STEPS_PER_EPISODE = 100
-CONTEXT_SIZE = 15  # Number of context for tokens, N tokens on each side as context
+CONTEXT_SIZE = 25  # Number of context for tokens, N tokens on each side as context
 
 # Training Parameters
 EPOCHS = 3
@@ -347,10 +347,17 @@ def main_testing():
     policy_network = TransformerPolicyNetwork(vocab_size=vocab.size, embedding_dim=EMBEDDING_DIM, num_heads=NUM_HEADS, num_layers=NUM_LAYERS, action_size=ACTION_SIZE, dropout=DROPOUT).to(device)
     print("[Main] Policy network initialized.")
 
-    word2vec_model = train_word2vec(train_data, EMBEDDING_DIM)
-    word2vec_embeddings = get_word2vec_embeddings(word2vec_model, vocab)
-    accuracy = evaluate_word_analogies(word2vec_embeddings, vocab, "data/questions-words.txt", device=device)
-    print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {accuracy*100:.2f}%")
+    cbow_model = train_cbow(train_data, EMBEDDING_DIM)
+    cbow_embeddings = get_word2vec_embeddings(cbow_model, vocab)
+    cbow_accuracy = evaluate_word_analogies(cbow_embeddings, vocab, "data/questions-words.txt", device=device)
+    print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {cbow_accuracy*100:.2f}%")
+
+    sleep(1)
+
+    sg_model = train_skipgram(train_data, EMBEDDING_DIM)
+    sg_embeddings = get_word2vec_embeddings(sg_model, vocab)
+    sg_accuracy = evaluate_word_analogies(sg_embeddings, vocab, "data/questions-words.txt", device=device)
+    print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {sg_accuracy*100:.2f}%")
 
     sleep(1)
 
@@ -361,11 +368,10 @@ def main_testing():
 
     print(f"[Main] Starting testing on analogies.")
     embeddings = policy_network.embedding.weight.detach().cpu()
-    accuracy = evaluate_word_analogies(embeddings, vocab, "data/questions-words.txt", device=device)
-    print(f"[Main] Finished testing. Accuracy on word analogies: {accuracy*100:.2f}%")
+    RL_accuracy = evaluate_word_analogies(embeddings, vocab, "data/questions-words.txt", device=device)
+    print(f"[Main] Finished testing. Accuracy on word analogies: {RL_accuracy*100:.2f}%")
 
-    # for i in range(len(embeddings)):
-    #   print('Word ', i, vocab.idx_to_token.get(i))
+    print(f"Comparison of Cbow vs Skip Gram vs RL tokenizer on analogy: {cbow_accuracy*100:.2f}% vs {sg_accuracy*100:.2f}% vs {RL_accuracy*100:.2f}%")
 
 
 
