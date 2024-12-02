@@ -36,6 +36,6 @@ There may be instances of failure due to line # 50 in `evaluate.py` or more deta
 
 That should be all it takes. 
 
-We have also included a model in the github repo to use as for testing: embedding_dim = 256, num_heads=9, num_layers=5
+We have also included a model in the github repo to use as for testing: embedding_dim = 128, num_heads=8, num_layers=5
 
 Our hyperparameter sweep gave the following: (embedding_dim=512, num_heads=8, num_layers=7, learning_rate=9.0e-7, RoPE Frequency(In `policy_network.py`)=6500, Reward Bonuses(in `tokenizer_environment.py`):(LENGTH_BONUS: 7.4, FREQUENCY_BONUS: 9.1, PAIR_FREQUENCY: 4.4, SHORT_TOKEN: -5.4))
