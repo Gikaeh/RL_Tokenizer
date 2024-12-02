@@ -3,10 +3,11 @@ from numpy.f2py.crackfortran import previous_context
 
 
 class TokenizerEnvironment:
-    LENGTH_BONUS_WEIGHT = 1.00
-    FREQUENCY_BONUS_WEIGHT = 1.20
-    PAIR_FREQUENCY_BONUS_WEIGHT = 1.10
-    SHORT_TOKEN_PENALTY = -0.70
+
+    LENGTH_BONUS_WEIGHT = 8.50
+    FREQUENCY_BONUS_WEIGHT = 9.00
+    PAIR_FREQUENCY_BONUS_WEIGHT = 4.00
+    SHORT_TOKEN_PENALTY = -8.00
 
     def __init__(self, vocab, context_size):
         self.context_size = context_size # Context Window for Tokens

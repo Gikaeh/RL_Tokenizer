@@ -13,7 +13,7 @@ def print_parameters(params):
         STEPS_PER_EPISODE,
         BATCH_SIZE, NUM_ENVIRONMENTS, NUM_WORKERS, PREFETCH_FACTOR, EPOCHS,
         EMBEDDING_DIM, NUM_HEADS, NUM_LAYERS, ACTION_SIZE, LEARNING_RATE, GAMMA, EPS_CLIP, K_EPOCHS,
-        CONTEXT_SIZE, MAX_LENGTH,
+        CONTEXT_SIZE,
         MODEL_SAVE_PATH, MODEL_CHECKPOINT_INTERVAL,
         device
     ) = params
@@ -50,7 +50,6 @@ def print_parameters(params):
 
     print("\n--- Environment Parameters ---")
     print(f"CONTEXT_SIZE: {CONTEXT_SIZE}")
-    print(f"MAX_LENGTH: {MAX_LENGTH}")
 
     print("\n--- Model Save and Checkpoint Parameters ---")
     print(f"MODEL_SAVE_PATH: {MODEL_SAVE_PATH}")

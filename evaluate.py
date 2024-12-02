@@ -39,7 +39,7 @@ def create_bpe_tokenizer(tokenizer_path, dataset):
     if not os.path.exists(tokenizer_path):
         bpe_tokenizer = Tokenizer(models.BPE())
         bpe_tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
-        trainer = trainers.BpeTrainer(vocab_size=33230, min_frequency=2, special_tokens=["[PAD]", "[UNK]"])
+        trainer = trainers.BpeTrainer(vocab_size=55000, min_frequency=2, special_tokens=["[PAD]", "[UNK]"])
         bpe_tokenizer.train_from_iterator(dataset)
         os.makedirs(os.path.dirname(tokenizer_path), exist_ok=True)
         bpe_tokenizer.save(tokenizer_path)
@@ -47,7 +47,7 @@ def create_bpe_tokenizer(tokenizer_path, dataset):
     return PreTrainedTokenizerFast(tokenizer_object=Tokenizer.from_file(tokenizer_path))
 
 def load_rl_policy(model_path, vocab_size):
-    policy_network = TransformerPolicyNetwork(vocab_size=vocab_size, embedding_dim=256, num_heads=4, num_layers=5, action_size=2, dropout=0.1) # Make sure these align with the saved model
+    policy_network = TransformerPolicyNetwork(vocab_size=vocab_size, embedding_dim=128, num_heads=4, num_layers=5, action_size=2, dropout=0.1) # Make sure these align with the saved model
     rl_policy = PPOAgent(policy_network, lr=1e-6, gamma=0.99, eps_clip=0.2, k_epochs=3, device=device)
     rl_policy.load_model(model_path)
     return rl_policy

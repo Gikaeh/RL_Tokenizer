@@ -29,7 +29,6 @@ class PPOAgent:
 
     # Select an action based on policy
     def select_action(self, state_tensor, attention_mask):
-        """Select an action based on policy."""
         action_probs, *_ = self.policy_network(state_tensor, attention_mask)
         dist = Categorical(action_probs)
         action = dist.sample()
@@ -60,10 +59,10 @@ class PPOAgent:
     def update_policy(self):
         states, attention_masks = self._pad_sequences() # Pad sequences
         actions, old_log_probs, state_values, returns, advantages = self._prepare_tensors() # Prepare tensors
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)  # Normalize advantages
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)  # Normalize advantages
 
         dataset = TensorDataset(states, attention_masks, actions, old_log_probs, returns, advantages)
-        loader = DataLoader(dataset, batch_size=64, shuffle=True, drop_last=True) # mini-batch dataset
+        loader = DataLoader(dataset, batch_size=32, shuffle=True) # mini-batch dataset
 
         self._process_batches(loader)
 
@@ -121,7 +120,7 @@ class PPOAgent:
 
                 # Update the model every grad_accum_steps
                 if (batch_idx + 1) % grad_accum_steps == 0:
-                    torch.nn.utils.clip_grad_norm_(self.policy_network.parameters(), max_norm=2.0) # Clip gradients
+                    torch.nn.utils.clip_grad_norm_(self.policy_network.parameters(), max_norm=5.0) # Clip gradients
 
                     self.optimizer.step()
                     self.optimizer.zero_grad()
@@ -156,6 +155,52 @@ class PPOAgent:
         loss = policy_loss + (0.5 * value_loss) - (0.03 * entropy)
 
         return loss, policy_loss, value_loss, entropy
+
+    # def _compute_losses(self, states, attention_masks, actions, old_action_probs, returns, state_values):
+    #     # Generalized Advantage Estimation (GAE)
+    #     min_size = min(returns.size(0), state_values.size(0) - 1, actions.size(0))
+    #     returns = returns[:min_size]
+    #     state_values = state_values[:min_size + 1]
+    #     actions = actions[:min_size]
+    #
+    #     deltas = returns + self.gamma * state_values[1:] - state_values[:-1]
+    #     advantages = torch.zeros_like(deltas)
+    #     gae = 0
+    #     for t in reversed(range(len(deltas))):
+    #         gae = deltas[t] + self.gamma * 0.95 * gae
+    #         advantages[t] = gae
+    #
+    #     # Normalize advantages
+    #     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+    #
+    #     # Evaluate
+    #     action_probs, state_values = self.policy_network(states[:min_size], attention_masks[:min_size])
+    #     dist = torch.distributions.Categorical(action_probs)
+    #     entropy = dist.entropy().mean()
+    #
+    #     old_action_probs = old_action_probs[:min_size]
+    #     if old_action_probs.dim() == 1:
+    #         old_action_probs = old_action_probs.unsqueeze(1).repeat(1, action_probs.size(1))
+    #
+    #     old_dist = torch.distributions.Categorical(probs=old_action_probs)
+    #
+    #     new_log_probs = dist.log_prob(actions)
+    #     old_log_probs = old_dist.log_prob(actions)
+    #     ratios = torch.exp(new_log_probs - old_log_probs)
+    #
+    #     # Compute KL divergence
+    #     kl_div = torch.distributions.kl_divergence(dist, old_dist).mean()
+    #
+    #     # Compute policy loss
+    #     policy_loss = -torch.mean(ratios * advantages) + 0.02 * kl_div
+    #
+    #     # Compute value loss
+    #     value_loss = F.mse_loss(state_values[:len(returns)], returns)
+    #
+    #     # Total loss
+    #     loss = policy_loss + value_loss - (0.02 * entropy)
+    #
+    #     return loss, policy_loss, value_loss, entropy
 
     def save_model(self, path):
         torch.save(self.policy_network.state_dict(), path)

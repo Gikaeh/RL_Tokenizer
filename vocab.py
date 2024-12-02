@@ -29,7 +29,7 @@ class Vocabulary:
         # Vocab size is set to upperbound of monolingual data # https://arxiv.org/abs/2310.08754
         # Monolingual lower bound is 33k, upper bound is 55k
         # Multiligual needs at least 100k
-        trainer = trainers.BpeTrainer(special_tokens=["<pad>", "<unk>"], vocab_size=33230)
+        trainer = trainers.BpeTrainer(special_tokens=["<pad>", "<unk>"], vocab_size=55000)
         self.tokenizer.train_from_iterator(texts, trainer) # Train tokenizer on text inputs
 
         # Get the tokenizer vocabulary

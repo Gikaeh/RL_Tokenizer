@@ -1,5 +1,6 @@
 import os
 
+import optuna
 import torch
 from torch.utils.data import DataLoader
 from time import sleep
@@ -21,21 +22,22 @@ from test import evaluate_word_analogies
 DATA_PATH = "data"  # Base path for data files
 TRAIN_SPLIT = "train"
 VALIDATION_SPLIT = "validation"
-DATASET_NAME = 'wikitext-103-v1'  # Options: 'wikitext-2-v1', 'wikitext-2-raw-v1', 'wikitext-103-v1', 'wikitext-103-raw-v1'
-DATA_PERCENTAGE = 1.00 # Percentage of data to use for training
+DATASET_NAME = 'wikitext-2-v1'  # Options: 'wikitext-2-v1', 'wikitext-2-raw-v1', 'wikitext-103-v1', 'wikitext-103-raw-v1'
+DATA_PERCENTAGE = 0.1 # Percentage of data to use for training
 
-# Evaluation Parameters
-STEPS_PER_EPISODE = 15
+# Environment Parameters
+STEPS_PER_EPISODE = 100
+CONTEXT_SIZE = 25  # Number of context for tokens, N tokens on each side as context
 
 # Training Parameters
-EPOCHS = 5
+EPOCHS = 3
 K_EPOCHS = 3
 BATCH_SIZE = 128
-LEARNING_RATE = 1e-6
+LEARNING_RATE = 8.8e-7
 NUM_ENVIRONMENTS = BATCH_SIZE  # Must match batch size
-EMBEDDING_DIM = 128
+EMBEDDING_DIM = 512
 DROPOUT = 0.1
-NUM_HEADS = 8
+NUM_HEADS = 4
 NUM_LAYERS = 5
 
 # DataLoader Parameters
@@ -44,12 +46,8 @@ PREFETCH_FACTOR = 6
 
 # PPO Parameters
 GAMMA = 0.99
-EPS_CLIP = 0.2
+EPS_CLIP = 0.1
 ACTION_SIZE = 2  # Valid actions (0: Continue, 1: Split)
-
-# Environment Parameters
-CONTEXT_SIZE = 15  # Number of context for tokens, N tokens on each side as context
-MAX_LENGTH = 300  # Maximum length of tokenized text
 
 # Model Checkpoint and Save Path
 MODEL_SAVE_PATH = "models/final/final_policy_model.pth"
@@ -93,91 +91,118 @@ def train(agent, envs, vocab, data_loader, validation_data, epochs, device):
     print("[Main] Final model saved.")
 
 
-# def main():
+# best_runs = []
+#
+# def objective(trial):
+#     global best_runs
+#
+#     # Suggest hyperparameters
+#     embedding_dim = trial.suggest_categorical("embedding_dim", [512, 4096])
+#     learning_rate = trial.suggest_float("learning_rate", 1e-9, 1e-7)
+#     freq_rate = trial.suggest_float("freq_rate", 5000, 25000)
+#     context_size = trial.suggest_int("context_size", 100, 150)
+#     clip_vale = trial.suggest_float("clip_value", 0.1, 0.2)
+#
+#     # New hyperparameters for rewards
+#     length_bonus_weight = trial.suggest_float("length_bonus_weight", 7, 100)
+#     frequency_bonus_weight = trial.suggest_float("frequency_bonus_weight", 7, 100)
+#     pair_frequency_bonus_weight = trial.suggest_float("pair_frequency_bonus_weight", 4, 100)
+#     short_token_penalty = trial.suggest_float("short_token_penalty", -100.0, -7)
+#
 #     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #
-#     params = [
-#         DATA_PATH, TRAIN_SPLIT, VALIDATION_SPLIT, DATASET_NAME, DATA_PERCENTAGE,
-#         STEPS_PER_EPISODE,
-#         BATCH_SIZE, NUM_ENVIRONMENTS, NUM_WORKERS, PREFETCH_FACTOR, EPOCHS,
-#         EMBEDDING_DIM, NUM_HEADS, NUM_LAYERS, ACTION_SIZE, LEARNING_RATE, GAMMA, EPS_CLIP, K_EPOCHS,
-#         CONTEXT_SIZE, MAX_LENGTH,
-#         MODEL_SAVE_PATH, MODEL_CHECKPOINT_INTERVAL,
-#         device
-#     ]
-#
-#     # Print Parameters
-#     print_parameters(params)
-#
-#     # Create necessary directories
 #     print("\n[Main] Setting up project directories.")
 #     create_directory_structure()
 #
-#     # Download and preprocess dataset if not already done
 #     print(f"\n[Main] Preparing '{DATASET_NAME}' dataset.")
 #     download_and_preprocess_wikitext(dataset_name=DATASET_NAME, output_dir=DATA_PATH)
 #
-#     # Load training and validation data
-#     print("\n[Main] Loading training data.")
 #     train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
 #     train_data = train_data[:int(len(train_data) * DATA_PERCENTAGE)]
 #
-#     print("[Main] Loading validation data.")
 #     validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
 #     validation_data = validation_data[:int(len(validation_data) * DATA_PERCENTAGE)]
-#     print(f"[Main] Loaded {len(train_data)} training examples.")
-#     print(f"[Main] Loaded {len(validation_data)} validation examples.")
 #
-#     print("\n[Main] Initializing vocabulary...")
 #     vocab = Vocabulary(train_data)
-#     print(f"[Main] Vocabulary Size: {vocab.size}")
+#     data_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=True, prefetch_factor=PREFETCH_FACTOR, drop_last=True, persistent_workers=True)
 #
-#     print(f"\n[Main] Preparing DataLoader with batch size: {BATCH_SIZE}")
-#     data_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=True, prefetch_factor=PREFETCH_FACTOR, drop_last=True)
-#     print("[Main] DataLoader prepared.")
-#
-#     # Create vectorized environments
-#     print(f"\n[Main] Creating {NUM_ENVIRONMENTS} vectorized environments.")
-#     env_fns = [lambda: TokenizerEnvironment(vocab=vocab, context_size=CONTEXT_SIZE) for _ in range(NUM_ENVIRONMENTS)]
+#     env_fns = [lambda: TokenizerEnvironment(
+#         vocab=vocab,
+#         context_size=context_size,
+#         length_bonus_weight=length_bonus_weight,
+#         frequency_bonus_weight=frequency_bonus_weight,
+#         pair_frequency_bonus_weight=pair_frequency_bonus_weight,
+#         short_token_penalty=short_token_penalty
+#     ) for _ in range(BATCH_SIZE)]
 #     envs = VectorizedTokenizerEnvironment(env_fns)
-#     print("[Main] Vectorized environments created.")
 #
-#     # Initialize policy network
-#     print("\n[Main] Initializing policy network.")
-#     policy_network = TransformerPolicyNetwork(vocab_size=vocab.size, embedding_dim=EMBEDDING_DIM, num_heads=NUM_HEADS, num_layers=NUM_LAYERS, action_size=ACTION_SIZE, dropout=DROPOUT).to(device)
-#     print("[Main] Policy network initialized.")
+#     policy_network = TransformerPolicyNetwork(
+#         vocab_size=vocab.size,
+#         embedding_dim=embedding_dim,
+#         num_heads=4,
+#         num_layers=3,
+#         action_size=2,
+#         dropout=0.1,
+#         freq=freq_rate
+#     ).to(device)
 #
-#     # Initialize PPO agent
-#     print("\n[Main] Initializing PPO agent.")
-#     agent = PPOAgent(policy_network=policy_network, lr=LEARNING_RATE, gamma=GAMMA, eps_clip=EPS_CLIP, k_epochs=K_EPOCHS, device=device)
-#     print("[Main] PPO agent initialized.")
+#     agent = PPOAgent(
+#         policy_network=policy_network,
+#         lr=learning_rate,
+#         gamma=0.99,
+#         eps_clip=clip_vale,
+#         k_epochs=3,
+#         device=device
+#     )
 #
-#     # Compute efficiency score (optional)
-#     efficiency_percentage, model_params, dataset_size, gpu_flops_tflops, compute_bottleneck, suggestion = compute_efficiency_score(policy_network, len(train_data))
-#     print(f"[Main] Model Parameters: {model_params}")
-#     print(f"[Main] Dataset Size: {dataset_size}")
-#     print(f"[Main] GPU FLOPs: {gpu_flops_tflops:.2f} TFLOPs")
-#     print(f"[Main] Compute Bottleneck: {compute_bottleneck}\n")
-#
-#     print(f"[Main] Efficiency Score: {efficiency_percentage:.2f}%")
-#     print(f"[Main] Suggestion: {suggestion}")
-#
-#     # Start training
 #     print("\n[Main] Starting training process.")
-#     sleep(0.1)  # Sleep to allow printing to complete in order
-#     train(agent, envs, vocab, data_loader, validation_data, epochs=EPOCHS, device=device)
+#     for epoch in range(1):  # Modify as needed for more epochs
+#         train(agent, envs, vocab, data_loader, validation_data, epochs=1, device=device)
+#
+#         # Evaluate performance
+#         accuracy = evaluate_word_analogies(
+#             embeddings=policy_network.embedding.weight.detach().cpu(),
+#             vocab=vocab,
+#             analogy_file_path="data/questions-words.txt",
+#             device=device
+#         )
+#
+#         # Record current trial results
+#         trial_result = {
+#             "embedding_dim": embedding_dim,
+#             "learning_rate": learning_rate,
+#             "freq_rate": freq_rate,
+#             "context_size": context_size,
+#             "length_bonus_weight": length_bonus_weight,
+#             "frequency_bonus_weight": frequency_bonus_weight,
+#             "pair_frequency_bonus_weight": pair_frequency_bonus_weight,
+#             "short_token_penalty": short_token_penalty,
+#             "accuracy": accuracy
+#         }
+#
+#         best_runs.append(trial_result)
+#         best_runs = sorted(best_runs, key=lambda x: x["accuracy"], reverse=True)[:10]
+#
+#         # Print the top 5 best runs
+#         print("\n[Main] Top 5 Training Runs:")
+#         for i, run in enumerate(best_runs):
+#             print(f"Rank {i + 1}: Accuracy = {run['accuracy']:.4f}, Params = {run}")
+#
+#     return accuracy
 
-def main():
+
+
+def main_training():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     params = [
-    DATA_PATH, TRAIN_SPLIT, VALIDATION_SPLIT, DATASET_NAME, DATA_PERCENTAGE,
-    STEPS_PER_EPISODE,
-    BATCH_SIZE, NUM_ENVIRONMENTS, NUM_WORKERS, PREFETCH_FACTOR, EPOCHS,
-    EMBEDDING_DIM, NUM_HEADS, NUM_LAYERS, ACTION_SIZE, LEARNING_RATE, GAMMA, EPS_CLIP, K_EPOCHS,
-    CONTEXT_SIZE, MAX_LENGTH,
-    MODEL_SAVE_PATH, MODEL_CHECKPOINT_INTERVAL,
-    device
+        DATA_PATH, TRAIN_SPLIT, VALIDATION_SPLIT, DATASET_NAME, DATA_PERCENTAGE,
+        STEPS_PER_EPISODE,
+        BATCH_SIZE, NUM_ENVIRONMENTS, NUM_WORKERS, PREFETCH_FACTOR, EPOCHS,
+        EMBEDDING_DIM, NUM_HEADS, NUM_LAYERS, ACTION_SIZE, LEARNING_RATE, GAMMA, EPS_CLIP, K_EPOCHS,
+        CONTEXT_SIZE,
+        MODEL_SAVE_PATH, MODEL_CHECKPOINT_INTERVAL,
+        device
     ]
 
     # Print Parameters
@@ -206,23 +231,109 @@ def main():
     vocab = Vocabulary(train_data)
     print(f"[Main] Vocabulary Size: {vocab.size}")
 
+    print(f"\n[Main] Preparing DataLoader with batch size: {BATCH_SIZE}")
+    data_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=True, prefetch_factor=PREFETCH_FACTOR, drop_last=True)
+    print("[Main] DataLoader prepared.")
+
+    # Create vectorized environments
+    print(f"\n[Main] Creating {NUM_ENVIRONMENTS} vectorized environments.")
+    env_fns = [lambda: TokenizerEnvironment(vocab=vocab, context_size=CONTEXT_SIZE) for _ in range(NUM_ENVIRONMENTS)]
+    envs = VectorizedTokenizerEnvironment(env_fns)
+    print("[Main] Vectorized environments created.")
+
+    # Initialize policy network
     print("\n[Main] Initializing policy network.")
     policy_network = TransformerPolicyNetwork(vocab_size=vocab.size, embedding_dim=EMBEDDING_DIM, num_heads=NUM_HEADS, num_layers=NUM_LAYERS, action_size=ACTION_SIZE, dropout=DROPOUT).to(device)
     print("[Main] Policy network initialized.")
 
-    print("\n[Main] Loading model.")
-    policy_network.load_state_dict(torch.load(MODEL_SAVE_PATH))
-    policy_network.eval()
-    print("\n[Main] Model loaded.")
+    # Initialize PPO agent
+    print("\n[Main] Initializing PPO agent.")
+    agent = PPOAgent(policy_network=policy_network, lr=LEARNING_RATE, gamma=GAMMA, eps_clip=EPS_CLIP, k_epochs=K_EPOCHS, device=device)
+    print("[Main] PPO agent initialized.")
 
-    print(f"[Main] Starting testing on analogies.")
-    embeddings = policy_network.embedding.weight.detach().cpu()
-    accuracy = evaluate_word_analogies(embeddings, vocab, "data/questions-words.txt", device=device)
-    print(f"[Main] Finished testing. Accuracy on word analogies: {accuracy*100:.2f}%")
+    # Compute efficiency score
+    efficiency_percentage, model_params, dataset_size, gpu_flops_tflops, compute_bottleneck, suggestion = compute_efficiency_score(policy_network, len(train_data))
+    print(f"[Main] Model Parameters: {model_params}")
+    print(f"[Main] Dataset Size: {dataset_size}")
+    print(f"[Main] GPU FLOPs: {gpu_flops_tflops:.2f} TFLOPs")
+    print(f"[Main] Compute Bottleneck: {compute_bottleneck}\n")
+
+    print(f"[Main] Efficiency Score: {efficiency_percentage:.2f}%")
+    print(f"[Main] Suggestion: {suggestion}")
+
+    # Start training
+    print("\n[Main] Starting training process.")
+    sleep(0.1)  # Sleep to allow printing to complete in order
+    train(agent, envs, vocab, data_loader, validation_data, epochs=EPOCHS, device=device)
+
+# def main_testing():
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#
+#     params = [
+#     DATA_PATH, TRAIN_SPLIT, VALIDATION_SPLIT, DATASET_NAME, DATA_PERCENTAGE,
+#     STEPS_PER_EPISODE,
+#     BATCH_SIZE, NUM_ENVIRONMENTS, NUM_WORKERS, PREFETCH_FACTOR, EPOCHS,
+#     EMBEDDING_DIM, NUM_HEADS, NUM_LAYERS, ACTION_SIZE, LEARNING_RATE, GAMMA, EPS_CLIP, K_EPOCHS,
+#     CONTEXT_SIZE, MAX_LENGTH,
+#     MODEL_SAVE_PATH, MODEL_CHECKPOINT_INTERVAL,
+#     device
+#     ]
+#
+#     # Print Parameters
+#     print_parameters(params)
+#
+#     # Create necessary directories
+#     print("\n[Main] Setting up project directories.")
+#     create_directory_structure()
+#
+#     # Download and preprocess dataset if not already done
+#     print(f"\n[Main] Preparing '{DATASET_NAME}' dataset.")
+#     download_and_preprocess_wikitext(dataset_name=DATASET_NAME, output_dir=DATA_PATH)
+#
+#     # Load training and validation data
+#     print("\n[Main] Loading training data.")
+#     train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+#     train_data = train_data[:int(len(train_data) * DATA_PERCENTAGE)]
+#
+#     print("[Main] Loading validation data.")
+#     validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+#     validation_data = validation_data[:int(len(validation_data) * DATA_PERCENTAGE)]
+#     print(f"[Main] Loaded {len(train_data)} training examples.")
+#     print(f"[Main] Loaded {len(validation_data)} validation examples.")
+#
+#     print("\n[Main] Initializing vocabulary...")
+#     vocab = Vocabulary(train_data)
+#     print(f"[Main] Vocabulary Size: {vocab.size}")
+#
+#     print("\n[Main] Initializing policy network.")
+#     policy_network = TransformerPolicyNetwork(vocab_size=vocab.size, embedding_dim=EMBEDDING_DIM, num_heads=NUM_HEADS, num_layers=NUM_LAYERS, action_size=ACTION_SIZE, dropout=DROPOUT).to(device)
+#     print("[Main] Policy network initialized.")
+#
+#     print("\n[Main] Loading model.")
+#     policy_network.load_state_dict(torch.load(MODEL_SAVE_PATH))
+#     policy_network.eval()
+#     print("\n[Main] Model loaded.")
+#
+#     print(f"[Main] Starting testing on analogies.")
+#     embeddings = policy_network.embedding.weight.detach().cpu()
+#     accuracy = evaluate_word_analogies(embeddings, vocab, "data/questions-words.txt", device=device)
+#     print(f"[Main] Finished testing. Accuracy on word analogies: {accuracy*100:.2f}%")
 
     # for i in range(len(embeddings)):
     #   print('Word ', i, vocab.idx_to_token.get(i))
 
 
+
+
+# if __name__ == "__main__":
+#     study = optuna.create_study(direction="maximize")
+#     study.optimize(objective)
+#
+#     print("Best hyperparameters:", study.best_params)
+#     print("Best accuracy:", study.best_value)
+
 if __name__ == "__main__":
-    main()
+    main_training()
+
+# if __name__ == "__main__":
+#     main_testing()
