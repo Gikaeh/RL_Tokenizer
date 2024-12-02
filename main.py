@@ -13,6 +13,8 @@ from tokenizer_environment import VectorizedTokenizerEnvironment, TokenizerEnvir
 from utils import preprocess_state, load_preprocessed_data, save_model_checkpoint, print_parameters, download_and_preprocess_wikitext, create_directory_structure, compute_efficiency_score
 from vocab import Vocabulary
 from test import evaluate_word_analogies
+from alt_model import train_word2vec, get_word2vec_embeddings
+
 
 # -------------------------------
 # -----Hard-Coded Variables------
@@ -22,22 +24,22 @@ from test import evaluate_word_analogies
 DATA_PATH = "data"  # Base path for data files
 TRAIN_SPLIT = "train"
 VALIDATION_SPLIT = "validation"
-DATASET_NAME = 'wikitext-2-v1'  # Options: 'wikitext-2-v1', 'wikitext-2-raw-v1', 'wikitext-103-v1', 'wikitext-103-raw-v1'
-DATA_PERCENTAGE = 0.1 # Percentage of data to use for training
+DATASET_NAME = 'wikitext-103-v1'  # Options: 'wikitext-2-v1', 'wikitext-2-raw-v1', 'wikitext-103-v1', 'wikitext-103-raw-v1'
+DATA_PERCENTAGE = 1 # Percentage of data to use for training
 
 # Environment Parameters
 STEPS_PER_EPISODE = 100
-CONTEXT_SIZE = 25  # Number of context for tokens, N tokens on each side as context
+CONTEXT_SIZE = 15  # Number of context for tokens, N tokens on each side as context
 
 # Training Parameters
 EPOCHS = 3
 K_EPOCHS = 3
 BATCH_SIZE = 128
-LEARNING_RATE = 8.8e-7
+LEARNING_RATE = 1e-6
 NUM_ENVIRONMENTS = BATCH_SIZE  # Must match batch size
-EMBEDDING_DIM = 512
+EMBEDDING_DIM = 128
 DROPOUT = 0.1
-NUM_HEADS = 4
+NUM_HEADS = 8
 NUM_LAYERS = 5
 
 # DataLoader Parameters
@@ -91,6 +93,45 @@ def train(agent, envs, vocab, data_loader, validation_data, epochs, device):
     print("[Main] Final model saved.")
 
 
+def fine_tune_on_analogy(agent, vocab, analogy_data, epochs, batch_size, device):
+    """
+    Fine-tune the PPO agent on analogy tasks.
+    Args:
+        agent (PPOAgent): The agent to fine-tune.
+        vocab (Vocabulary): The vocabulary.
+        analogy_data (list): List of analogy pairs (tokenized).
+        epochs (int): Number of epochs to train.
+        batch_size (int): Batch size for training.
+        device (torch.device): Device to train on.
+    """
+
+    analogy_loader = DataLoader(analogy_data, batch_size=batch_size, shuffle=True)
+
+    for epoch in range(epochs):
+        total_loss = 0.0
+        for batch in analogy_loader:
+            word1, word2, word3, word4 = batch.split()  # Tokenized analogy words
+
+            # Generate embeddings for the analogy words
+            emb1 = agent.policy_network.embedding(word1.to(device))
+            emb2 = agent.policy_network.embedding(word2.to(device))
+            emb3 = agent.policy_network.embedding(word3.to(device))
+            emb4 = agent.policy_network.embedding(word4.to(device))
+
+            # Compute analogy loss: (emb2 - emb1) + emb3 ~= emb4
+            predicted_emb4 = emb2 - emb1 + emb3
+            loss = F.mse_loss(predicted_emb4, emb4)
+
+            # Backpropagation
+            agent.optimizer.zero_grad()
+            loss.backward()
+            agent.optimizer.step()
+
+            total_loss += loss.item()
+
+        print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss:.4f}")
+
+
 # best_runs = []
 #
 # def objective(trial):
@@ -99,7 +140,6 @@ def train(agent, envs, vocab, data_loader, validation_data, epochs, device):
 #     # Suggest hyperparameters
 #     embedding_dim = trial.suggest_categorical("embedding_dim", [512, 4096])
 #     learning_rate = trial.suggest_float("learning_rate", 1e-9, 1e-7)
-#     freq_rate = trial.suggest_float("freq_rate", 5000, 25000)
 #     context_size = trial.suggest_int("context_size", 100, 150)
 #     clip_vale = trial.suggest_float("clip_value", 0.1, 0.2)
 #
@@ -142,8 +182,7 @@ def train(agent, envs, vocab, data_loader, validation_data, epochs, device):
 #         num_heads=4,
 #         num_layers=3,
 #         action_size=2,
-#         dropout=0.1,
-#         freq=freq_rate
+#         dropout=0.1
 #     ).to(device)
 #
 #     agent = PPOAgent(
@@ -171,7 +210,6 @@ def train(agent, envs, vocab, data_loader, validation_data, epochs, device):
 #         trial_result = {
 #             "embedding_dim": embedding_dim,
 #             "learning_rate": learning_rate,
-#             "freq_rate": freq_rate,
 #             "context_size": context_size,
 #             "length_bonus_weight": length_bonus_weight,
 #             "frequency_bonus_weight": frequency_bonus_weight,
@@ -266,58 +304,65 @@ def main_training():
     sleep(0.1)  # Sleep to allow printing to complete in order
     train(agent, envs, vocab, data_loader, validation_data, epochs=EPOCHS, device=device)
 
-# def main_testing():
-#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#
-#     params = [
-#     DATA_PATH, TRAIN_SPLIT, VALIDATION_SPLIT, DATASET_NAME, DATA_PERCENTAGE,
-#     STEPS_PER_EPISODE,
-#     BATCH_SIZE, NUM_ENVIRONMENTS, NUM_WORKERS, PREFETCH_FACTOR, EPOCHS,
-#     EMBEDDING_DIM, NUM_HEADS, NUM_LAYERS, ACTION_SIZE, LEARNING_RATE, GAMMA, EPS_CLIP, K_EPOCHS,
-#     CONTEXT_SIZE, MAX_LENGTH,
-#     MODEL_SAVE_PATH, MODEL_CHECKPOINT_INTERVAL,
-#     device
-#     ]
-#
-#     # Print Parameters
-#     print_parameters(params)
-#
-#     # Create necessary directories
-#     print("\n[Main] Setting up project directories.")
-#     create_directory_structure()
-#
-#     # Download and preprocess dataset if not already done
-#     print(f"\n[Main] Preparing '{DATASET_NAME}' dataset.")
-#     download_and_preprocess_wikitext(dataset_name=DATASET_NAME, output_dir=DATA_PATH)
-#
-#     # Load training and validation data
-#     print("\n[Main] Loading training data.")
-#     train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
-#     train_data = train_data[:int(len(train_data) * DATA_PERCENTAGE)]
-#
-#     print("[Main] Loading validation data.")
-#     validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
-#     validation_data = validation_data[:int(len(validation_data) * DATA_PERCENTAGE)]
-#     print(f"[Main] Loaded {len(train_data)} training examples.")
-#     print(f"[Main] Loaded {len(validation_data)} validation examples.")
-#
-#     print("\n[Main] Initializing vocabulary...")
-#     vocab = Vocabulary(train_data)
-#     print(f"[Main] Vocabulary Size: {vocab.size}")
-#
-#     print("\n[Main] Initializing policy network.")
-#     policy_network = TransformerPolicyNetwork(vocab_size=vocab.size, embedding_dim=EMBEDDING_DIM, num_heads=NUM_HEADS, num_layers=NUM_LAYERS, action_size=ACTION_SIZE, dropout=DROPOUT).to(device)
-#     print("[Main] Policy network initialized.")
-#
-#     print("\n[Main] Loading model.")
-#     policy_network.load_state_dict(torch.load(MODEL_SAVE_PATH))
-#     policy_network.eval()
-#     print("\n[Main] Model loaded.")
-#
-#     print(f"[Main] Starting testing on analogies.")
-#     embeddings = policy_network.embedding.weight.detach().cpu()
-#     accuracy = evaluate_word_analogies(embeddings, vocab, "data/questions-words.txt", device=device)
-#     print(f"[Main] Finished testing. Accuracy on word analogies: {accuracy*100:.2f}%")
+def main_testing():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    params = [
+    DATA_PATH, TRAIN_SPLIT, VALIDATION_SPLIT, DATASET_NAME, DATA_PERCENTAGE,
+    STEPS_PER_EPISODE,
+    BATCH_SIZE, NUM_ENVIRONMENTS, NUM_WORKERS, PREFETCH_FACTOR, EPOCHS,
+    EMBEDDING_DIM, NUM_HEADS, NUM_LAYERS, ACTION_SIZE, LEARNING_RATE, GAMMA, EPS_CLIP, K_EPOCHS,
+    CONTEXT_SIZE,
+    MODEL_SAVE_PATH, MODEL_CHECKPOINT_INTERVAL,
+    device
+    ]
+
+    # Print Parameters
+    print_parameters(params)
+
+    # Create necessary directories
+    print("\n[Main] Setting up project directories.")
+    create_directory_structure()
+
+    # Download and preprocess dataset if not already done
+    print(f"\n[Main] Preparing '{DATASET_NAME}' dataset.")
+    download_and_preprocess_wikitext(dataset_name=DATASET_NAME, output_dir=DATA_PATH)
+
+    # Load training and validation data
+    print("\n[Main] Loading training data.")
+    train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    train_data = train_data[:int(len(train_data) * DATA_PERCENTAGE)]
+
+    print("[Main] Loading validation data.")
+    validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    validation_data = validation_data[:int(len(validation_data) * DATA_PERCENTAGE)]
+    print(f"[Main] Loaded {len(train_data)} training examples.")
+    print(f"[Main] Loaded {len(validation_data)} validation examples.")
+
+    print("\n[Main] Initializing vocabulary...")
+    vocab = Vocabulary(train_data)
+    print(f"[Main] Vocabulary Size: {vocab.size}")
+
+    print("\n[Main] Initializing policy network.")
+    policy_network = TransformerPolicyNetwork(vocab_size=vocab.size, embedding_dim=EMBEDDING_DIM, num_heads=NUM_HEADS, num_layers=NUM_LAYERS, action_size=ACTION_SIZE, dropout=DROPOUT).to(device)
+    print("[Main] Policy network initialized.")
+
+    word2vec_model = train_word2vec(train_data, EMBEDDING_DIM)
+    word2vec_embeddings = get_word2vec_embeddings(word2vec_model, vocab)
+    accuracy = evaluate_word_analogies(word2vec_embeddings, vocab, "data/questions-words.txt", device=device)
+    print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {accuracy*100:.2f}%")
+
+    sleep(1)
+
+    print("\n[Main] Loading model.")
+    policy_network.load_state_dict(torch.load(MODEL_SAVE_PATH))
+    policy_network.eval()
+    print("\n[Main] Model loaded.")
+
+    print(f"[Main] Starting testing on analogies.")
+    embeddings = policy_network.embedding.weight.detach().cpu()
+    accuracy = evaluate_word_analogies(embeddings, vocab, "data/questions-words.txt", device=device)
+    print(f"[Main] Finished testing. Accuracy on word analogies: {accuracy*100:.2f}%")
 
     # for i in range(len(embeddings)):
     #   print('Word ', i, vocab.idx_to_token.get(i))
@@ -332,8 +377,8 @@ def main_training():
 #     print("Best hyperparameters:", study.best_params)
 #     print("Best accuracy:", study.best_value)
 
-if __name__ == "__main__":
-    main_training()
-
 # if __name__ == "__main__":
-#     main_testing()
+#     main_training()
+
+if __name__ == "__main__":
+    main_testing()
