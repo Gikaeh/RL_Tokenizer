@@ -10,7 +10,7 @@ from tqdm import tqdm
 from policy_network import TransformerPolicyNetwork
 from ppo_agent import PPOAgent
 from tokenizer_environment import VectorizedTokenizerEnvironment, TokenizerEnvironment
-from utils import preprocess_state, load_preprocessed_data, save_model_checkpoint, print_parameters, download_and_preprocess_wikitext, create_directory_structure, compute_efficiency_score
+from utils import preprocess_state, load_preprocessed_data, save_model_checkpoint, print_parameters, download_and_preprocess_wikitext, create_directory_structure, compute_efficiency_score, download_and_preprocess_giga, load_preprocessed_giga
 from vocab import Vocabulary
 from test import evaluate_word_analogies
 from alt_model import train_cbow, train_skipgram, get_word2vec_embeddings
@@ -93,43 +93,43 @@ def train(agent, envs, vocab, data_loader, validation_data, epochs, device):
     print("[Main] Final model saved.")
 
 
-def fine_tune_on_analogy(agent, vocab, analogy_data, epochs, batch_size, device):
-    """
-    Fine-tune the PPO agent on analogy tasks.
-    Args:
-        agent (PPOAgent): The agent to fine-tune.
-        vocab (Vocabulary): The vocabulary.
-        analogy_data (list): List of analogy pairs (tokenized).
-        epochs (int): Number of epochs to train.
-        batch_size (int): Batch size for training.
-        device (torch.device): Device to train on.
-    """
+# def fine_tune_on_analogy(agent, vocab, analogy_data, epochs, batch_size, device):
+#     """
+#     Fine-tune the PPO agent on analogy tasks.
+#     Args:
+#         agent (PPOAgent): The agent to fine-tune.
+#         vocab (Vocabulary): The vocabulary.
+#         analogy_data (list): List of analogy pairs (tokenized).
+#         epochs (int): Number of epochs to train.
+#         batch_size (int): Batch size for training.
+#         device (torch.device): Device to train on.
+#     """
 
-    analogy_loader = DataLoader(analogy_data, batch_size=batch_size, shuffle=True)
+#     analogy_loader = DataLoader(analogy_data, batch_size=batch_size, shuffle=True)
 
-    for epoch in range(epochs):
-        total_loss = 0.0
-        for batch in analogy_loader:
-            word1, word2, word3, word4 = batch.split()  # Tokenized analogy words
+#     for epoch in range(epochs):
+#         total_loss = 0.0
+#         for batch in analogy_loader:
+#             word1, word2, word3, word4 = batch.split()  # Tokenized analogy words
 
-            # Generate embeddings for the analogy words
-            emb1 = agent.policy_network.embedding(word1.to(device))
-            emb2 = agent.policy_network.embedding(word2.to(device))
-            emb3 = agent.policy_network.embedding(word3.to(device))
-            emb4 = agent.policy_network.embedding(word4.to(device))
+#             # Generate embeddings for the analogy words
+#             emb1 = agent.policy_network.embedding(word1.to(device))
+#             emb2 = agent.policy_network.embedding(word2.to(device))
+#             emb3 = agent.policy_network.embedding(word3.to(device))
+#             emb4 = agent.policy_network.embedding(word4.to(device))
 
-            # Compute analogy loss: (emb2 - emb1) + emb3 ~= emb4
-            predicted_emb4 = emb2 - emb1 + emb3
-            loss = F.mse_loss(predicted_emb4, emb4)
+#             # Compute analogy loss: (emb2 - emb1) + emb3 ~= emb4
+#             predicted_emb4 = emb2 - emb1 + emb3
+#             loss = F.mse_loss(predicted_emb4, emb4)
 
-            # Backpropagation
-            agent.optimizer.zero_grad()
-            loss.backward()
-            agent.optimizer.step()
+#             # Backpropagation
+#             agent.optimizer.zero_grad()
+#             loss.backward()
+#             agent.optimizer.step()
 
-            total_loss += loss.item()
+#             total_loss += loss.item()
 
-        print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss:.4f}")
+#         print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss:.4f}")
 
 
 # best_runs = []
@@ -251,16 +251,19 @@ def main_training():
     create_directory_structure()
 
     # Download and preprocess dataset if not already done
-    print(f"\n[Main] Preparing '{DATASET_NAME}' dataset.")
-    download_and_preprocess_wikitext(dataset_name=DATASET_NAME, output_dir=DATA_PATH)
+    # print(f"\n[Main] Preparing '{DATASET_NAME}' dataset.")
+    # download_and_preprocess_wikitext(dataset_name=DATASET_NAME, output_dir=DATA_PATH)
+    print(f"\n[Main] Preparing gigaword dataset.")
+    download_and_preprocess_giga(DATA_PATH)
+
 
     # Load training and validation data
     print("\n[Main] Loading training data.")
-    train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name='gigaword')
     train_data = train_data[:int(len(train_data) * DATA_PERCENTAGE)]
 
     print("[Main] Loading validation data.")
-    validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name='gigaword')
     validation_data = validation_data[:int(len(validation_data) * DATA_PERCENTAGE)]
     print(f"[Main] Loaded {len(train_data)} training examples.")
     print(f"[Main] Loaded {len(validation_data)} validation examples.")
@@ -325,16 +328,20 @@ def main_testing():
     create_directory_structure()
 
     # Download and preprocess dataset if not already done
-    print(f"\n[Main] Preparing '{DATASET_NAME}' dataset.")
-    download_and_preprocess_wikitext(dataset_name=DATASET_NAME, output_dir=DATA_PATH)
+    # print(f"\n[Main] Preparing '{DATASET_NAME}' dataset.")
+    # download_and_preprocess_wikitext(dataset_name=DATASET_NAME, output_dir=DATA_PATH)
+    print(f"\n[Main] Preparing gigaword dataset.")
+    download_and_preprocess_giga(DATA_PATH)
 
     # Load training and validation data
     print("\n[Main] Loading training data.")
-    train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    # train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    train_data = load_preprocessed_giga(split=TRAIN_SPLIT, output_dir=DATA_PATH)
     train_data = train_data[:int(len(train_data) * DATA_PERCENTAGE)]
 
     print("[Main] Loading validation data.")
-    validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    # validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    validation_data = load_preprocessed_giga(split=VALIDATION_SPLIT, output_dir=DATA_PATH)
     validation_data = validation_data[:int(len(validation_data) * DATA_PERCENTAGE)]
     print(f"[Main] Loaded {len(train_data)} training examples.")
     print(f"[Main] Loaded {len(validation_data)} validation examples.")

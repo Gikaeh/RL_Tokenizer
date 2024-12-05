@@ -104,6 +104,40 @@ def download_and_preprocess_wikitext(dataset_name, output_dir = "data"):
     print(f"[Utils] {dataset_version} dataset downloaded and preprocessed.")
 
 
+def download_and_preprocess_giga(output_dir = "data"):
+    # dataset_version = f'{dataset_name}'
+    splits = ['train', 'validation', 'test']
+    split_files = {split: os.path.join(output_dir, f"gigaword-{split}.json") for split in splits}
+
+    if all([os.path.isfile(path) for path in split_files.values()]):
+        print(f"[Utils] Preprocessed gigaword data already exists. Skipping download and preprocessing.")
+        return
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    print(f"[Utils] Loading gigaword dataset.")
+    dataset = load_dataset('gigaword', trust_remote_code=True)
+    print(f"[Utils] Loaded gigaword dataset.")
+
+    # Preprocess data
+    for split in splits:
+        split_data = dataset[split]
+        split_file = split_files[split]
+        if os.path.isfile(split_file):
+            print(f"[Utils] {split.capitalize()} split already exists at {split_file}. Skipping.")
+            continue
+
+        print(f"[Utils] Processing and saving {split} split.")
+        with open(split_file, 'w', encoding='utf-8') as f:
+            for example in tqdm(split_data, desc=f"Processing {split}"):
+                document = preprocess_text(example['document'])
+                summary = preprocess_text(example['summary'])
+                if document and summary:
+                    json.dump({"document": document, "summary": summary}, f)
+                    f.write('\n')
+
+    print(f"[Utils] gigaword dataset downloaded and preprocessed.")
+
 def load_preprocessed_data(split, output_dir, dataset_name):
     split_file = os.path.join(output_dir, f"{dataset_name}-{split}.json")
     if not os.path.isfile(split_file):
@@ -121,6 +155,24 @@ def load_preprocessed_data(split, output_dir, dataset_name):
     print(f"[Utils] Loaded {len(texts)} samples from {split} split.")
     return texts
 
+def load_preprocessed_giga(split, output_dir):
+    split_file = os.path.join(output_dir, f"gigaword-{split}.json")
+    if not os.path.isfile(split_file):
+        print(f"[Utils] Error: Preprocessed split file {split_file} not found.")
+        raise FileNotFoundError(f"Preprocessed split file {split_file} not found.")
+
+    print(f"[Utils] Loading {split} split from {split_file}...")
+    texts = []
+    with open(split_file, 'r', encoding='utf-8') as f:
+        for line in tqdm(f, desc=f"Loading {split}"):
+            data = json.loads(line)
+            document = data.get('document', '').strip()
+            summary = data.get('summary', '').strip()
+            if document and summary:
+                texts.append({"document": document, "summary": summary})
+
+    print(f"[Utils] Loaded {len(texts)} samples from {split} split.")
+    return texts
 
 # Process the padded text sequence batches and attention masks
 def preprocess_state(states, vocab, device):
