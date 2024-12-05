@@ -256,14 +256,15 @@ def main_training():
     print(f"\n[Main] Preparing gigaword dataset.")
     download_and_preprocess_giga(DATA_PATH)
 
-
     # Load training and validation data
     print("\n[Main] Loading training data.")
-    train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name='gigaword')
+    # train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    train_data = load_preprocessed_giga(split=TRAIN_SPLIT, output_dir=DATA_PATH)
     train_data = train_data[:int(len(train_data) * DATA_PERCENTAGE)]
 
     print("[Main] Loading validation data.")
-    validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name='gigaword')
+    # validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    validation_data = load_preprocessed_giga(split=VALIDATION_SPLIT, output_dir=DATA_PATH)
     validation_data = validation_data[:int(len(validation_data) * DATA_PERCENTAGE)]
     print(f"[Main] Loaded {len(train_data)} training examples.")
     print(f"[Main] Loaded {len(validation_data)} validation examples.")
