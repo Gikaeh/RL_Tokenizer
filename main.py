@@ -12,8 +12,8 @@ from ppo_agent import PPOAgent
 from tokenizer_environment import VectorizedTokenizerEnvironment, TokenizerEnvironment
 from utils import preprocess_state, load_preprocessed_data, save_model_checkpoint, print_parameters, download_and_preprocess_wikitext, create_directory_structure, compute_efficiency_score, download_and_preprocess_giga, load_preprocessed_giga
 from vocab import Vocabulary
-from test import evaluate_word_analogies
-from alt_model import train_cbow, train_skipgram, get_word2vec_embeddings
+from test import evaluate_word_analogies, evaluate_word_similarity
+from alt_model import train_cbow, train_skipgram, get_word2vec_embeddings, load_w2v_vocab
 
 
 # -------------------------------
@@ -355,16 +355,26 @@ def main_testing():
     policy_network = TransformerPolicyNetwork(vocab_size=vocab.size, embedding_dim=EMBEDDING_DIM, num_heads=NUM_HEADS, num_layers=NUM_LAYERS, action_size=ACTION_SIZE, dropout=DROPOUT).to(device)
     print("[Main] Policy network initialized.")
 
-    cbow_model = train_cbow(train_data, EMBEDDING_DIM)
+    # cbow_model = train_cbow(train_data, EMBEDDING_DIM)
+    # os.makedirs(os.path.dirname("models/final/final_cbow_model.pth"), exist_ok=True)
+    # torch.save(cbow_model, "models/final/final_cbow_model.pth")
+    # print("[Main] Final model saved.")
+    cbow_model = torch.load("models/final/final_cbow_model.pth")
     cbow_embeddings = get_word2vec_embeddings(cbow_model, vocab)
-    cbow_accuracy = evaluate_word_analogies(cbow_embeddings, vocab, "data/questions-words.txt", device=device)
-    print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {cbow_accuracy*100:.2f}%")
+    # cbow_accuracy = evaluate_word_analogies(cbow_embeddings, vocab, "data/questions-words.txt", device=device)
+    cbow_accuracy = evaluate_word_similarity(cbow_embeddings, vocab, "data/SimLex-999.txt", device=device)
+    # print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {cbow_accuracy*100:.2f}%")
 
     sleep(1)
 
-    sg_model = train_skipgram(train_data, EMBEDDING_DIM)
+    # sg_model = train_skipgram(train_data, EMBEDDING_DIM)
+    # os.makedirs(os.path.dirname("models/final/final_sg_model.pth"), exist_ok=True)
+    # torch.save(sg_model, "models/final/final_sg_model.pth")
+    # print("[Main] Final model saved.")
+    sg_model = torch.load("models/final/final_sg_model.pth")
     sg_embeddings = get_word2vec_embeddings(sg_model, vocab)
-    sg_accuracy = evaluate_word_analogies(sg_embeddings, vocab, "data/questions-words.txt", device=device)
+    # sg_accuracy = evaluate_word_analogies(sg_embeddings, vocab, "data/questions-words.txt", device=device)
+    sg_accuracy = evaluate_word_similarity(sg_embeddings, vocab, "data/SimLex-999.txt", device=device)
     print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {sg_accuracy*100:.2f}%")
 
     sleep(1)
@@ -376,10 +386,11 @@ def main_testing():
 
     print(f"[Main] Starting testing on analogies.")
     embeddings = policy_network.embedding.weight.detach().cpu()
-    RL_accuracy = evaluate_word_analogies(embeddings, vocab, "data/questions-words.txt", device=device)
+    # RL_accuracy = evaluate_word_analogies(embeddings, vocab, "data/questions-words.txt", device=device)
+    RL_accuracy = evaluate_word_similarity(embeddings, vocab, "data/SimLex-999.txt", device=device)
     print(f"[Main] Finished testing. Accuracy on word analogies: {RL_accuracy*100:.2f}%")
 
-    print(f"Comparison of Cbow vs Skip Gram vs RL tokenizer on analogy: {cbow_accuracy*100:.2f}% vs {sg_accuracy*100:.2f}% vs {RL_accuracy*100:.2f}%")
+    print(f"Comparison of Cbow vs Skip Gram vs RL tokenizer on analogy: {cbow_accuracy:.4f}% vs {sg_accuracy:.4f}% vs {RL_accuracy:.4f}%")
 
 
 

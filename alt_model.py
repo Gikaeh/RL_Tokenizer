@@ -1,8 +1,8 @@
 from gensim.models import Word2Vec
-from gensim.utils import simple_preprocess
 from gensim.models.callbacks import CallbackAny2Vec
 import numpy as np
 from tqdm import tqdm
+import torch
 
 def train_cbow(training_data, embedding_dim):
     word2vec_model = Word2Vec(training_data, vector_size=embedding_dim, window=5, min_count=1, callbacks=[TqdmCallback(5)])
@@ -20,6 +20,10 @@ def get_word2vec_embeddings(model, vocab):
         else:
             embedding_matrix.append(np.zeros(model.vector_size))
     return np.array(embedding_matrix)
+
+def load_w2v_vocab(path):
+    word2vec = torch.load(path)
+    return word2vec, list(word2vec.wv.key_to_index.keys())
 
 class TqdmCallback(CallbackAny2Vec):
     def __init__(self, total_epochs):

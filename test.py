@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from scipy.stats import spearmanr
 
 def evaluate_word_analogies(embeddings, vocab, analogy_file_path, device):
     correct, total, skip = 0, 0, 0
@@ -107,3 +108,90 @@ def evaluate_word_analogies(embeddings, vocab, analogy_file_path, device):
           f"Evaluated: {total}, Skipped: {skip}, Accuracy: {accuracy:.4f}")
 
     return accuracy
+
+
+def evaluate_word_similarity(embeddings, vocab, simlex_path, device):
+    """
+    Evaluate word embeddings on the SimLex-999 dataset.
+    
+    Args:
+        embeddings (np.ndarray or torch.Tensor): Word embeddings matrix.
+        vocab (Vocabulary): Vocabulary object with token_to_idx and idx_to_token mappings.
+        simlex_path (str): Path to the SimLex-999 dataset file.
+        device (torch.device): PyTorch device.
+    
+    Returns:
+        float: Mean squared error (MSE) between predicted and human-annotated similarity scores.
+    """
+    if isinstance(embeddings, torch.Tensor):
+        embeddings = embeddings.detach().cpu().numpy()
+
+    # zero_rows = np.linalg.norm(embeddings, axis=1) == 0
+    # invalid_rows = np.isnan(embeddings).any(axis=1) | np.isinf(embeddings).any(axis=1)
+
+    # if np.any(zero_rows):
+    #     print(f"[Warning] {np.sum(zero_rows)} zero embeddings found. Replacing with random values.")
+    #     embeddings[zero_rows] = np.random.normal(scale=1e-6, size=(np.sum(zero_rows), embeddings.shape[1]))
+
+    # if np.any(invalid_rows):
+    #     print(f"[Warning] {np.sum(invalid_rows)} invalid embeddings found. Replacing with random values.")
+    #     embeddings[invalid_rows] = np.random.normal(scale=1e-6, size=(np.sum(invalid_rows), embeddings.shape[1]))
+
+    # Normalize embeddings
+    embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
+    
+    if np.any(np.isnan(embeddings)) or np.any(np.isinf(embeddings)):
+        raise ValueError("[Error] Invalid embeddings after normalization.")
+    
+    predicted_similarities = []
+    human_similarities = []
+    skipped_pairs = 0
+
+    # Read SimLex-999 file
+    with open(simlex_path, 'r', encoding='utf-8') as file:
+        next(file)  # Skip header
+        for line_num, line in enumerate(file, start=1):
+            parts = line.strip().split('\t')
+            if len(parts) < 4:
+                print(f"[Warning] Skipping line {line_num}: insufficient columns.")
+                continue
+            
+            word1, word2, pos, simlex_score = parts[:4]
+            
+            # Convert words to indices
+            idx1 = vocab.token_to_idx.get(word1.lower(), vocab.token_to_idx["<unk>"])
+            idx2 = vocab.token_to_idx.get(word2.lower(), vocab.token_to_idx["<unk>"])
+            
+            # Handle BPE prefixes (Ġ)
+            if idx1 == vocab.token_to_idx["<unk>"]:
+                idx1 = vocab.token_to_idx.get('Ġ' + word1.lower(), vocab.token_to_idx["<unk>"])
+            if idx2 == vocab.token_to_idx["<unk>"]:
+                idx2 = vocab.token_to_idx.get('Ġ' + word2.lower(), vocab.token_to_idx["<unk>"])
+            
+            if idx1 == vocab.token_to_idx["<unk>"] or idx2 == vocab.token_to_idx["<unk>"]:
+                skipped_pairs += 1
+                continue
+
+            # Get embeddings for both words
+            emb1 = embeddings[idx1]
+            emb2 = embeddings[idx2]
+            
+            # Calculate cosine similarity
+            cosine_similarity = np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
+            cosine_similarity = max(min(cosine_similarity, 1.0), -1.0)  # Clamp values to [-1, 1]
+            
+            # Append similarity scores
+            predicted_similarities.append(cosine_similarity)
+            human_similarities.append(float(simlex_score))
+    
+    # Calculate mean squared error (MSE)
+    if len(predicted_similarities) == 0:
+        raise ValueError("[Error] No valid word pairs found in the dataset.")
+    
+    predicted_similarities = np.array(predicted_similarities)
+    human_similarities = np.array(human_similarities)
+
+    spearman_corr, _ = spearmanr(predicted_similarities, human_similarities)
+    print(f"[Summary] Spearman correlation: {spearman_corr:.4f}")
+    
+    return spearman_corr
