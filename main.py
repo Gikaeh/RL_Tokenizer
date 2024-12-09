@@ -13,7 +13,7 @@ from tokenizer_environment import VectorizedTokenizerEnvironment, TokenizerEnvir
 from utils import preprocess_state, load_preprocessed_data, save_model_checkpoint, print_parameters, download_and_preprocess_wikitext, create_directory_structure, compute_efficiency_score, download_and_preprocess_giga, load_preprocessed_giga
 from vocab import Vocabulary
 from test import evaluate_word_analogies, evaluate_word_similarity
-from alt_model import train_cbow, train_skipgram, get_word2vec_embeddings, load_w2v_vocab
+from alt_model import train_cbow, train_skipgram, get_word2vec_embeddings, load_w2v_vocab, w2v_tokenizer
 
 
 # -------------------------------
@@ -329,23 +329,17 @@ def main_testing():
     create_directory_structure()
 
     # Download and preprocess dataset if not already done
-    # print(f"\n[Main] Preparing '{DATASET_NAME}' dataset.")
-    # download_and_preprocess_wikitext(dataset_name=DATASET_NAME, output_dir=DATA_PATH)
-    print(f"\n[Main] Preparing gigaword dataset.")
-    download_and_preprocess_giga(DATA_PATH)
+    print(f"\n[Main] Preparing '{DATASET_NAME}' dataset.")
+    download_and_preprocess_wikitext(dataset_name=DATASET_NAME, output_dir=DATA_PATH)
+    # print(f"\n[Main] Preparing gigaword dataset.")
+    # download_and_preprocess_giga(DATA_PATH)
 
     # Load training and validation data
     print("\n[Main] Loading training data.")
-    # train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
-    train_data = load_preprocessed_giga(split=TRAIN_SPLIT, output_dir=DATA_PATH)
+    train_data = load_preprocessed_data(split=TRAIN_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
+    # train_data = load_preprocessed_giga(split=TRAIN_SPLIT, output_dir=DATA_PATH)
     train_data = train_data[:int(len(train_data) * DATA_PERCENTAGE)]
-
-    print("[Main] Loading validation data.")
-    # validation_data = load_preprocessed_data(split=VALIDATION_SPLIT, output_dir=DATA_PATH, dataset_name=DATASET_NAME)
-    validation_data = load_preprocessed_giga(split=VALIDATION_SPLIT, output_dir=DATA_PATH)
-    validation_data = validation_data[:int(len(validation_data) * DATA_PERCENTAGE)]
-    print(f"[Main] Loaded {len(train_data)} training examples.")
-    print(f"[Main] Loaded {len(validation_data)} validation examples.")
+    w2v_train_data = w2v_tokenizer(train_data)
 
     print("\n[Main] Initializing vocabulary...")
     vocab = Vocabulary(train_data)
@@ -355,27 +349,31 @@ def main_testing():
     policy_network = TransformerPolicyNetwork(vocab_size=vocab.size, embedding_dim=EMBEDDING_DIM, num_heads=NUM_HEADS, num_layers=NUM_LAYERS, action_size=ACTION_SIZE, dropout=DROPOUT).to(device)
     print("[Main] Policy network initialized.")
 
-    # cbow_model = train_cbow(train_data, EMBEDDING_DIM)
+    cbow_model = train_cbow(w2v_train_data, EMBEDDING_DIM)
     # os.makedirs(os.path.dirname("models/final/final_cbow_model.pth"), exist_ok=True)
     # torch.save(cbow_model, "models/final/final_cbow_model.pth")
     # print("[Main] Final model saved.")
-    cbow_model = torch.load("models/final/final_cbow_model.pth")
-    cbow_embeddings = get_word2vec_embeddings(cbow_model, vocab)
-    # cbow_accuracy = evaluate_word_analogies(cbow_embeddings, vocab, "data/questions-words.txt", device=device)
-    cbow_accuracy = evaluate_word_similarity(cbow_embeddings, vocab, "data/SimLex-999.txt", device=device)
-    # print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {cbow_accuracy*100:.2f}%")
+    # cbow_model = torch.load("models/final/final_cbow_model.pth")
+    cbow_vocab = load_w2v_vocab(cbow_model)
+    cbow_embeddings = get_word2vec_embeddings(cbow_model, cbow_vocab)
+    cbow_accuracy = evaluate_word_analogies(cbow_embeddings, cbow_vocab, "data/questions-words.txt", model='cbow')
+    print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {cbow_accuracy*100:.2f}%")
+    # cbow_accuracy = evaluate_word_similarity(cbow_embeddings, cbow_vocab, "data/SimLex-999.txt", model='cbow')
+    # print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {cbow_accuracy:.4f}")
 
     sleep(1)
 
-    # sg_model = train_skipgram(train_data, EMBEDDING_DIM)
+    sg_model = train_skipgram(w2v_train_data, EMBEDDING_DIM)
     # os.makedirs(os.path.dirname("models/final/final_sg_model.pth"), exist_ok=True)
     # torch.save(sg_model, "models/final/final_sg_model.pth")
     # print("[Main] Final model saved.")
-    sg_model = torch.load("models/final/final_sg_model.pth")
-    sg_embeddings = get_word2vec_embeddings(sg_model, vocab)
-    # sg_accuracy = evaluate_word_analogies(sg_embeddings, vocab, "data/questions-words.txt", device=device)
-    sg_accuracy = evaluate_word_similarity(sg_embeddings, vocab, "data/SimLex-999.txt", device=device)
-    print(f"[Main] Finished testing. Accuracy on word analogies for cbow: {sg_accuracy*100:.2f}%")
+    # sg_model = torch.load("models/final/final_sg_model.pth")
+    sg_vocab = load_w2v_vocab(sg_model)
+    sg_embeddings = get_word2vec_embeddings(sg_model, sg_vocab)
+    sg_accuracy = evaluate_word_analogies(sg_embeddings, sg_vocab, "data/questions-words.txt", model='sg')
+    print(f"[Main] Finished testing. Accuracy on word analogies for sg: {sg_accuracy*100:.2f}%")
+    # sg_accuracy = evaluate_word_similarity(sg_embeddings, sg_vocab, "data/SimLex-999.txt", model='sg')
+    # print(f"[Main] Finished testing. Accuracy on word analogies for sg: {sg_accuracy:.4f}")
 
     sleep(1)
 
@@ -386,11 +384,13 @@ def main_testing():
 
     print(f"[Main] Starting testing on analogies.")
     embeddings = policy_network.embedding.weight.detach().cpu()
-    # RL_accuracy = evaluate_word_analogies(embeddings, vocab, "data/questions-words.txt", device=device)
-    RL_accuracy = evaluate_word_similarity(embeddings, vocab, "data/SimLex-999.txt", device=device)
-    print(f"[Main] Finished testing. Accuracy on word analogies: {RL_accuracy*100:.2f}%")
+    RL_accuracy = evaluate_word_analogies(embeddings, vocab, "data/questions-words.txt")
+    print(f"[Main] Finished testing. Accuracy on word analogies for RL: {RL_accuracy*100:.2f}%")
+    # RL_accuracy = evaluate_word_similarity(embeddings, vocab, "data/SimLex-999.txt")
+    # print(f"[Main] Finished testing. Accuracy on word analogies: {RL_accuracy:.4f}")
 
-    print(f"Comparison of Cbow vs Skip Gram vs RL tokenizer on analogy: {cbow_accuracy:.4f}% vs {sg_accuracy:.4f}% vs {RL_accuracy:.4f}%")
+    print(f"Comparison of Cbow vs Skip Gram vs RL tokenizer on analogy: {cbow_accuracy*100:.2f}% vs {sg_accuracy*100:.2f}% vs {RL_accuracy*100:.2f}%")
+    # print(f"Comparison of Cbow vs Skip Gram vs RL tokenizer on similarity: {cbow_accuracy:.4f} vs {sg_accuracy:.4f} vs {RL_accuracy:.4f}")
 
 
 
